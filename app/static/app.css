@@ -1,0 +1,52 @@
+
+* { box-sizing: border-box; }
+body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: #f5f5f5; color: #333; }
+.login-wrap { display: flex; justify-content: center; align-items: center; min-height: 100vh; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+.login-card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); width: 360px; }
+.brand { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+.logo { width: 40px; height: 40px; background: #667eea; color: white; display: flex; align-items: center; justify-content: center; border-radius: 8px; font-weight: bold; font-size: 20px; }
+.brand h1 { font-size: 20px; margin: 0; }
+.brand p { font-size: 12px; color: #888; margin: 0; }
+label { display: block; margin-bottom: 16px; }
+label span { display: block; font-size: 14px; font-weight: 500; margin-bottom: 6px; }
+input[type=text], input[type=password], input[type=email] { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
+input:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 2px rgba(102,126,234,0.2); }
+.btn { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s; }
+.btn.primary { background: #667eea; color: white; }
+.btn.primary:hover { background: #5a6fd6; }
+.btn.ghost { background: transparent; border: 1px solid #ddd; color: #666; }
+.btn.ghost:hover { border-color: #667eea; color: #667eea; }
+.btn.small { padding: 6px 12px; font-size: 12px; }
+.hint { font-size: 12px; color: #888; margin-top: 12px; text-align: center; }
+.hidden { display: none; }
+.layout { display: flex; min-height: 100vh; }
+.sidebar { width: 220px; background: #1e1e2e; color: #cdd6f4; padding: 20px 0; }
+.sidebar .brand { padding: 0 20px; margin-bottom: 30px; }
+.sidebar .logo { width: 32px; height: 32px; font-size: 16px; }
+.sidebar .brand strong { color: white; font-size: 16px; }
+.sidebar .brand p { color: #a6adc8; font-size: 11px; }
+.sidebar nav a { display: flex; align-items: center; gap: 10px; padding: 10px 20px; color: #a6adc8; text-decoration: none; font-size: 14px; transition: all 0.2s; }
+.sidebar nav a:hover { background: #313244; color: #cdd6f4; }
+.sidebar nav a.active { background: #313244; color: #cba6f7; border-left: 3px solid #cba6f7; }
+.sidebar .side-foot { padding: 20px; }
+.main { flex: 1; padding: 20px; }
+.topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.topbar h2 { margin: 0; font-size: 22px; }
+.topbar p { margin: 0; color: #888; font-size: 14px; }
+.clock { font-size: 14px; color: #888; }
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }
+.card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.card h4 { margin: 0 0 8px 0; color: #888; font-size: 14px; font-weight: 500; }
+.card .value { font-size: 28px; font-weight: 700; color: #1e1e2e; }
+.panel { background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 20px; }
+.panel-head { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #eee; }
+.panel-head h3 { margin: 0; font-size: 16px; }
+.panel .table-wrap { padding: 16px 20px; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; padding: 8px 12px; font-size: 12px; color: #888; font-weight: 600; border-bottom: 1px solid #eee; }
+td { padding: 8px 12px; font-size: 14px; border-bottom: 1px solid #f5f5f5; }
+tr:hover { background: #f9f9f9; }
+.actions { display: flex; gap: 12px; padding: 16px 20px; }
+.modal-wrap { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 100; }
+.modal { background: white; padding: 24px; border-radius: 12px; width: 400px; }
+.toast { position: fixed; bottom: 20px; right: 20px; padding: 12px 20px; background: #333; color: white; border-radius: 8px; z-index: 200; }
