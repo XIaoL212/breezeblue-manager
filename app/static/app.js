@@ -34,6 +34,12 @@ function showDashboard(){
   switchView("dash");
 }
 
+// Password visibility toggle
+document.getElementById("togglePass").addEventListener("click",()=>{
+  const input=document.getElementById("lgPass");
+  input.type=input.type==="password"?"text":"password";
+});
+
 // Login
 document.getElementById("loginForm").addEventListener("submit",async(e)=>{
   e.preventDefault();
@@ -86,9 +92,12 @@ async function loadStats(){
   try{
     const stats=await api("/stats");
     const html=
-      <div class="card"><div class="label"><span class="icon blue">♟</span>总账户数</div><div class="value"></div><div class="foot">已配置账户</div></div>
-      <div class="card"><div class="label"><span class="icon green">★</span>总积分</div><div class="value"></div><div class="foot">所有账户积分合计</div></div>
-      <div class="card"><div class="label"><span class="icon yellow">✓</span>今日签到</div><div class="value"></div><div class="foot">今日成功签到次数</div></div>;
+      <div class="card"><div class="label"><span class="icon blue">♟</span>总账户数</div><div class="value"></div><div 
+class="foot">已配置账户</div></div>
+      <div class="card"><div class="label"><span class="icon green">★</span>总积分</div><div class="value"></div><div c
+lass="foot">所有账户积分合计</div></div>
+      <div class="card"><div class="label"><span class="icon yellow">✓</span>今日签到</div><div class="value"></div><di
+v class="foot">今日成功签到次数</div></div>;
     document.getElementById("statCards").innerHTML=html;
   }catch(err){toast(err.message,"err");}
 }
@@ -98,13 +107,17 @@ async function loadAccounts(){
   try{
     const accounts=await api("/accounts");
     if(accounts.length===0){
-      document.getElementById("accountTable").innerHTML="<tr><td colspan='6' style='text-align:center;color:var(--muted);padding:30px'>暂无账户</td></tr>";
+      document.getElementById("accountTable").innerHTML="<tr><td colspan='6' style='text-align:center;color:var(--muted
+);padding:30px'>暂无账户</td></tr>";
       return;
     }
-    let html="<thead><tr><th>ID</th><th>用户名</th><th>状态</th><th>积分</th><th>今日签到</th><th>操作</th></tr></thead><tbody>";
+    let html="<thead><tr><th>ID</th><th>用户名</th><th>状态</th><th>积分</th><th>今日签到</th><th>操作</th></tr></thead
+><tbody>";
     for(const a of accounts){
-      const statusTag=a.status==="active"?'<span class="tag success">正常</span>':'<span class="tag warning">异常</span>';
-      const checkinTag=a.checked_in_today?'<span class="tag success">已签到</span>':'<span class="tag danger">未签到</span>';
+      const statusTag=a.status==="active"?'<span class="tag success">正常</span>':'<span class="tag warning">异常</span
+>';
+      const checkinTag=a.checked_in_today?'<span class="tag success">已签到</span>':'<span class="tag danger">未签到</s
+pan>';
       html+=<tr>
         <td></td>
         <td></td>
@@ -183,7 +196,8 @@ async function loadLogs(){
   try{
     const logs=await api("/logs");
     if(logs.length===0){
-      document.getElementById("logTable").innerHTML="<tr><td colspan='5' style='text-align:center;color:var(--muted);padding:30px'>暂无签到日志</td></tr>";
+      document.getElementById("logTable").innerHTML="<tr><td colspan='5' style='text-align:center;color:var(--muted);pa
+dding:30px'>暂无签到日志</td></tr>";
       return;
     }
     let html="<thead><tr><th>时间</th><th>用户名</th><th>状态</th><th>积分变化</th><th>消息</th></tr></thead><tbody>";
@@ -223,7 +237,8 @@ document.getElementById("refreshLogsBtn").addEventListener("click",loadLogs);
 // Clock
 function updateClock(){
   const now=new Date();
-  document.getElementById("clock").textContent=now.toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  document.getElementById("clock").textContent=now.toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",second:"
+2-digit"});
 }
 setInterval(updateClock,1000);
 updateClock();

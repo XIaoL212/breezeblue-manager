@@ -31,6 +31,11 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
 .hint{font-size:12.5px;color:var(--muted);min-height:18px}
 .hint.err{color:var(--danger)} .hint.ok{color:var(--accent2)}
 
+/* Password toggle */
+.pass-wrap{position:relative}
+.pass-toggle{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:4px}
+.pass-toggle:hover{color:var(--txt)}
+
 /* Login Page */
 .login-page{min-height:100vh;display:flex;align-items:center;justify-content:center;
   background:radial-gradient(1100px 500px at 20% -10%,var(--glow1) 0%,transparent 60%),radial-gradient(900px 500px at 100% 110%,var(--glow2) 0%,transparent 55%),var(--bg)}
@@ -106,7 +111,6 @@ tr:hover td{background:var(--panel2)}
 /* Toast */
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--panel);border:1px solid var(--line);padding:12px 22px;border-radius:10px;z-index:11;font-size:13.5px;box-shadow:0 12px 40px rgba(0,0,0,.4);transition:.25s;opacity:0}
 .toast.show{opacity:1}
-
 </style>
 </head>
 <body>
@@ -127,7 +131,10 @@ tr:hover td{background:var(--panel2)}
       </label>
       <label>
         <span>密码</span>
-        <input id="lgPass" type="password" value="55588800qq" autocomplete="current-password">
+        <div class="pass-wrap">
+          <input id="lgPass" type="password" value="55588800qq" autocomplete="current-password">
+          <button type="button" class="pass-toggle" id="togglePass" title="显示密码">👁</button>
+        </div>
       </label>
       <button class="btn primary" type="submit">登录</button>
       <p class="hint" id="lgHint"></p>
@@ -230,6 +237,21 @@ function showDashboard(){
   switchView("dash");
 }
 
+// Password visibility toggle
+document.getElementById("togglePass").addEventListener("click",()=>{
+  const input=document.getElementById("lgPass");
+  const btn=document.getElementById("togglePass");
+  if(input.type==="password"){
+    input.type="text";
+    btn.textContent="🙈";
+    btn.title="隐藏密码";
+  }else{
+    input.type="password";
+    btn.textContent="👁";
+    btn.title="显示密码";
+  }
+});
+
 // Login
 document.getElementById("loginForm").addEventListener("submit",async(e)=>{
   e.preventDefault();
@@ -282,9 +304,12 @@ async function loadStats(){
   try{
     const stats=await api("/stats");
     const html=
-      <div class="card"><div class="label"><span class="icon blue">♟</span>总账户数</div><div class="value"></div><div class="foot">已配置账户</div></div>
-      <div class="card"><div class="label"><span class="icon green">★</span>总积分</div><div class="value"></div><div class="foot">所有账户积分合计</div></div>
-      <div class="card"><div class="label"><span class="icon yellow">✓</span>今日签到</div><div class="value"></div><div class="foot">今日成功签到次数</div></div>;
+      <div class="card"><div class="label"><span class="icon blue">♟</span>总账户数</div><div class="value"></div><div 
+class="foot">已配置账户</div></div>
+      <div class="card"><div class="label"><span class="icon green">★</span>总积分</div><div class="value"></div><div c
+lass="foot">所有账户积分合计</div></div>
+      <div class="card"><div class="label"><span class="icon yellow">✓</span>今日签到</div><div class="value"></div><di
+v class="foot">今日成功签到次数</div></div>;
     document.getElementById("statCards").innerHTML=html;
   }catch(err){toast(err.message,"err");}
 }
@@ -294,13 +319,17 @@ async function loadAccounts(){
   try{
     const accounts=await api("/accounts");
     if(accounts.length===0){
-      document.getElementById("accountTable").innerHTML="<tr><td colspan='6' style='text-align:center;color:var(--muted);padding:30px'>暂无账户</td></tr>";
+      document.getElementById("accountTable").innerHTML="<tr><td colspan='6' style='text-align:center;color:var(--muted
+);padding:30px'>暂无账户</td></tr>";
       return;
     }
-    let html="<thead><tr><th>ID</th><th>用户名</th><th>状态</th><th>积分</th><th>今日签到</th><th>操作</th></tr></thead><tbody>";
+    let html="<thead><tr><th>ID</th><th>用户名</th><th>状态</th><th>积分</th><th>今日签到</th><th>操作</th></tr></thead
+><tbody>";
     for(const a of accounts){
-      const statusTag=a.status==="active"?'<span class="tag success">正常</span>':'<span class="tag warning">异常</span>';
-      const checkinTag=a.checked_in_today?'<span class="tag success">已签到</span>':'<span class="tag danger">未签到</span>';
+      const statusTag=a.status==="active"?'<span class="tag success">正常</span>':'<span class="tag warning">异常</span
+>';
+      const checkinTag=a.checked_in_today?'<span class="tag success">已签到</span>':'<span class="tag danger">未签到</s
+pan>';
       html+=<tr>
         <td></td>
         <td></td>
@@ -379,7 +408,8 @@ async function loadLogs(){
   try{
     const logs=await api("/logs");
     if(logs.length===0){
-      document.getElementById("logTable").innerHTML="<tr><td colspan='5' style='text-align:center;color:var(--muted);padding:30px'>暂无签到日志</td></tr>";
+      document.getElementById("logTable").innerHTML="<tr><td colspan='5' style='text-align:center;color:var(--muted);pa
+dding:30px'>暂无签到日志</td></tr>";
       return;
     }
     let html="<thead><tr><th>时间</th><th>用户名</th><th>状态</th><th>积分变化</th><th>消息</th></tr></thead><tbody>";
@@ -419,7 +449,8 @@ document.getElementById("refreshLogsBtn").addEventListener("click",loadLogs);
 // Clock
 function updateClock(){
   const now=new Date();
-  document.getElementById("clock").textContent=now.toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  document.getElementById("clock").textContent=now.toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",second:"
+2-digit"});
 }
 setInterval(updateClock,1000);
 updateClock();
@@ -430,8 +461,6 @@ if(token){
 }else{
   showLogin();
 }
-
 </script>
 </body>
 </html>
-
