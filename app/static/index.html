@@ -393,8 +393,7 @@ async function showAddAccountModal(){
     const form=e.target;
     const data={
       username:form.username.value.trim(),
-      password:form.password.value,
-      cookie:form.cookie.value.trim()
+      password:form.password.value
     };
     api("/accounts",{method:"POST",body:JSON.stringify(data)})
       .then(function(){
