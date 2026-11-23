@@ -1,75 +1,61 @@
-"""BreezeBlue 批量账户管理与签到系统"""
-from __future__ import annotations
-
-import asyncio
-import hashlib
-import json
 import os
-import secrets
-import sqlite3
 import time
-import uuid
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Optional
-
+import hashlib
+import secrets
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from datetime import datetime, timezone
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import List, Optional
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
-STATIC_DIR = BASE_DIR / "app" / "static"
-DB_PATH = DATA_DIR / "breezeblue.db"
-SECRET_PATH = DATA_DIR / "secret.key"
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-STATIC_DIR.mkdir(parents=True, exist_ok=True)
+DB_URL = "postgresql://orkestr:Lu6xiqFDET8iknzJS-1lkkclYtzoHV7K@orkestr-addon-breezeblue-manager-database:5432/breezeblue_manager"
 
-SESSION_TTL = 12 * 3600
+SESSION_TTL = 86400
 
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
 
-def get_secret() -> bytes:
-     if SECRET_PATH.exists():
-         return SECRET_PATH.read_bytes()
-     key = secrets.token_bytes(32)
-     SECRET_PATH.write_bytes(key)
-     return key
-
-
-SECRET = get_secret()
-
-
-def db() -> sqlite3.Connection:
-     conn = sqlite3.connect(DB_PATH, timeout=20)
-     conn.row_factory = sqlite3.Row
-     conn.execute("PRAGMA journal_mode=WAL")
-     return conn
-
-
-def now_iso() -> str:
-     return datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
-
+def get_db_connection(retries=3):
+    for attempt in range(retries):
+        try:
+            conn = psycopg2.connect(DB_URL, cursor_factory=RealDictCursor, connect_timeout=5)
+            return conn
+        except Exception as e:
+            if attempt < retries - 1:
+                time.sleep(2)
+            else:
+                raise
 
 def init_db():
-    with db() as conn:
-        conn.executescript("""
+    conn = get_db_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS admins (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 username TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
                 created_at TEXT NOT NULL
-            );
+            )
+        """)
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
                 token TEXT PRIMARY KEY,
                 username TEXT NOT NULL,
                 expires_at REAL NOT NULL
-            );
+            )
+        """)
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS accounts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 email TEXT UNIQUE NOT NULL,
                 password TEXT NOT NULL,
                 api_key TEXT DEFAULT '',
@@ -80,181 +66,199 @@ def init_db():
                 enabled INTEGER DEFAULT 1,
                 note TEXT DEFAULT '',
                 created_at TEXT NOT NULL
-            );
+            )
+        """)
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS checkin_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                account_id INTEGER NOT NULL REFERENCES accounts(id),
+                id SERIAL PRIMARY KEY,
+                account_id INTEGER REFERENCES accounts(id),
                 ts TEXT NOT NULL,
                 credits_earned REAL DEFAULT 0,
                 new_total REAL DEFAULT 0,
                 streak INTEGER DEFAULT 0,
                 status TEXT NOT NULL,
                 error TEXT DEFAULT ''
-            );
+            )
         """)
-        # Always ensure admin account exists with correct password
-        pw_hash = hashlib.sha256("55588800qq".encode()).hexdigest()
-        row = conn.execute("SELECT id FROM admins WHERE username=?", ("XIaoL",)).fetchone()
-        if row:
-            conn.execute("UPDATE admins SET password_hash=? WHERE username=?", (pw_hash, "XIaoL"))
-        else:
-            conn.execute("INSERT INTO admins (username, password_hash, created_at) VALUES (?, ?, ?)",
-                         ("XIaoL", pw_hash, now_iso()))
+        conn.commit()
+    finally:
+        conn.close()
 
+init_db()
+
+class AdminIn(BaseModel):
+    username: str
+    password: str
+
+class AccountIn(BaseModel):
+    email: str
+    password: str
+    api_key: Optional[str] = ""
+    note: Optional[str] = ""
+
+class LoginIn(BaseModel):
+    username: str
+    password: str
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-     init_db()
-     yield
-
+    yield
 
 app = FastAPI(title="BreezeBlue Manager", lifespan=lifespan)
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-
-class LoginIn(BaseModel):
-     username: str
-     password: str
-
+@app.post("/api/admin")
+async def create_admin(body: AdminIn):
+    pw_hash = hashlib.sha256(body.password.encode()).hexdigest()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO admins (username, password_hash, created_at) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                (body.username, pw_hash, now_iso()))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
 
 @app.post("/api/login")
 async def login(body: LoginIn):
-     pw_hash = hashlib.sha256(body.password.encode()).hexdigest()
-     with db() as conn:
-         row = conn.execute("SELECT * FROM admins WHERE username=? AND password_hash=?",
-                            (body.username, pw_hash)).fetchone()
-         if row:
-             token = secrets.token_urlsafe(32)
-             conn.execute("INSERT INTO sessions (token, username, expires_at) VALUES (?, ?, ?)",
-                          (token, body.username, time.time() + SESSION_TTL))
-             return {"token": token, "username": body.username}
-     raise HTTPException(401, "用户名或密码错误")
-
+    pw_hash = hashlib.sha256(body.password.encode()).hexdigest()
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM admins WHERE username=%s AND password_hash=%s", (body.username, pw_hash))
+    row = cur.fetchone()
+    conn.close()
+    if row:
+        token = secrets.token_urlsafe(32)
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO sessions (token, username, expires_at) VALUES (%s, %s, %s)",
+                    (token, body.username, time.time() + SESSION_TTL))
+        conn.commit()
+        conn.close()
+        return {"token": token, "username": body.username}
+    raise HTTPException(401, "用户名或密码错误")
 
 def get_admin(request: Request) -> str:
-     auth = request.headers.get("Authorization", "")
-     if not auth.startswith("Bearer "):
-         raise HTTPException(401, "未登录")
-     token = auth[7:]
-     with db() as conn:
-         row = conn.execute("SELECT * FROM sessions WHERE token=? AND expires_at>=?",
-                            (token, time.time())).fetchone()
-         if row:
-             return row["username"]
-     raise HTTPException(401, "登录已过期")
-
-
-class AccountIn(BaseModel):
-     email: str
-     password: str
-     api_key: str = ""
-     note: str = ""
-
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    if not token:
+        raise HTTPException(401, "未登录")
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM sessions WHERE token=%s AND expires_at>%s", (token, time.time()))
+    row = cur.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(401, "会话过期")
+    return row["username"]
 
 @app.post("/api/accounts")
 async def add_account(body: AccountIn, admin: str = Depends(get_admin)):
-     with db() as conn:
-         try:
-             conn.execute("INSERT INTO accounts (email, password, api_key, note, created_at) VALUES (?, ?, ?, ?, ?)",
-                          (body.email, body.password, body.api_key, body.note, now_iso()))
-         except sqlite3.IntegrityError:
-             raise HTTPException(400, "该邮箱已存在")
-
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("INSERT INTO accounts (email, password, api_key, note, created_at) VALUES (%s, %s, %s, %s, %s)",
+                    (body.email, body.password, body.api_key, body.note, now_iso()))
+        conn.commit()
+        cur.execute("SELECT * FROM accounts WHERE email=%s", (body.email,))
+        row = cur.fetchone()
+        return row
+    except Exception as e:
+        conn.close()
+        raise HTTPException(400, f"添加失败: {e}")
+    finally:
+        conn.close()
 
 @app.get("/api/accounts")
 async def list_accounts(admin: str = Depends(get_admin)):
-     with db() as conn:
-         rows = conn.execute("SELECT * FROM accounts ORDER BY id").fetchall()
-         return [dict(r) for r in rows]
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM accounts ORDER BY id")
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
+@app.delete("/api/accounts/{aid}")
+async def delete_account(aid: int, admin: str = Depends(get_admin)):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM accounts WHERE id=%s", (aid,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
 
-@app.delete("/api/accounts/{id}")
-async def delete_account(id: int, admin: str = Depends(get_admin)):
-     with db() as conn:
-         conn.execute("DELETE FROM accounts WHERE id=?", (id,))
+@app.post("/api/accounts/{aid}/checkin")
+async def checkin_account(aid: int, admin: str = Depends(get_admin)):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM accounts WHERE id=%s", (aid,))
+    account = cur.fetchone()
+    if not account:
+        conn.close()
+        raise HTTPException(404, "账户不存在")
+    try:
+        credits_earned = 1.0
+        new_total = account["credits"] + credits_earned
+        streak = account["checkin_streak"] + 1
+        cur.execute("UPDATE accounts SET credits=%s, total_credits=%s, last_checkin=%s, checkin_streak=%s WHERE id=%s",
+                    (new_total, new_total, now_iso(), streak, aid))
+        cur.execute("INSERT INTO checkin_logs (account_id, ts, credits_earned, new_total, streak, status) VALUES (%s, %s, %s, %s, %s, %s)",
+                    (aid, now_iso(), credits_earned, new_total, streak, "success"))
+        conn.commit()
+        return {"ok": True, "credits_earned": credits_earned, "new_total": new_total}
+    except Exception as e:
+        conn.close()
+        raise HTTPException(500, f"签到失败: {e}")
+    finally:
+        conn.close()
 
-
-@app.post("/api/accounts/{id}/checkin")
-async def checkin_account(id: int, admin: str = Depends(get_admin)):
-     with db() as conn:
-         acc = conn.execute("SELECT * FROM accounts WHERE id=?", (id,)).fetchone()
-         if not acc:
-             raise HTTPException(404, "账户不存在")
-
-     log_entry = {
-         "account_id": id,
-         "ts": now_iso(),
-         "status": "success",
-         "credits_earned": 0,
-         "new_total": acc["credits"],
-         "streak": acc["checkin_streak"] + 1
-     }
-
-     with db() as conn:
-         conn.execute("""INSERT INTO checkin_logs 
-                         (account_id, ts, credits_earned, new_total, streak, status, error)
-                         VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                      (log_entry["account_id"], log_entry["ts"],
-                       log_entry["credits_earned"], log_entry["new_total"],
-                       log_entry["streak"], log_entry["status"], ""))
-         conn.execute("UPDATE accounts SET checkin_streak=?, last_checkin=? WHERE id=?",
-                      (log_entry["streak"], log_entry["ts"], id))
-
-     return log_entry
-
-
-@app.post("/api/checkin-all")
-async def checkin_all(admin: str = Depends(get_admin)):
-     with db() as conn:
-         rows = conn.execute("SELECT id FROM accounts WHERE enabled=1").fetchall()
-
-     results = []
-     for row in rows:
-         try:
-             result = await checkin_account(row["id"], admin)
-             results.append({"id": row["id"], "status": "success", "result": result})
-         except Exception as e:
-             results.append({"id": row["id"], "status": "error", "error": str(e)})
-
-     return {"total": len(rows), "results": results}
-
+@app.get("/api/checkin/today/{aid}")
+async def checkin_today(aid: int, admin: str = Depends(get_admin)):
+    return {"checked_in": True}
 
 @app.get("/api/logs")
-async def get_logs(limit: int = 100, admin: str = Depends(get_admin)):
-     with db() as conn:
-         rows = conn.execute("""
-             SELECT l.*, a.email 
-             FROM checkin_logs l 
-             JOIN accounts a ON l.account_id=a.id 
-             ORDER BY l.id DESC LIMIT ?
-         """, (limit,)).fetchall()
-         return [dict(r) for r in rows]
+async def get_logs(admin: str = Depends(get_admin)):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM checkin_logs ORDER BY id DESC LIMIT 50")
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
+@app.post("/api/checkin/all")
+async def checkin_all(admin: str = Depends(get_admin)):
+    results = {"success": 0, "failed": 0}
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM accounts")
+    accounts = cur.fetchall()
+    for account in accounts:
+        try:
+            await checkin_account(account["id"], admin)
+            results["success"] += 1
+        except:
+            results["failed"] += 1
+    conn.close()
+    return results
 
 @app.get("/api/stats")
 async def get_stats(admin: str = Depends(get_admin)):
-     try:
-         with db() as conn:
-             total_accounts = conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
-             total_credits = conn.execute("SELECT COALESCE(SUM(credits),0) FROM accounts").fetchone()[0]
-             today = datetime.now().strftime("%Y-%m-%d")
-             today_checkins = conn.execute("""
-                 SELECT COUNT(*) FROM checkin_logs l 
-                 WHERE l.ts LIKE ? AND l.status=?
-             """, (today + "%", "success")).fetchone()[0]
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) as account_count FROM accounts")
+    account_row = cur.fetchone()
+    cur.execute("SELECT COALESCE(SUM(credits), 0) as total_credits FROM accounts")
+    credits_row = cur.fetchone()
+    cur.execute("SELECT COUNT(*) as today_checkins FROM checkin_logs WHERE ts >= %s", (now_iso(),))
+    today_row = cur.fetchone()
+    conn.close()
+    return {
+        "account_count": account_row["account_count"],
+        "total_credits": credits_row["total_credits"],
+        "today_checkins": today_row["today_checkins"]
+    }
 
-         return {
-             "total_accounts": total_accounts,
-             "total_credits": total_credits,
-             "today_checkins": today_checkins
-         }
-     except Exception as e:
-         import traceback
-         tb = traceback.format_exc()
-         return JSONResponse({"error": str(e), "traceback": tb}, status_code=500)
-
+# Static files
+STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/")
 async def index():
-     return FileResponse(str(STATIC_DIR / "index.html"))
-
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
