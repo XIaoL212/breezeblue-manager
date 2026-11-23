@@ -1,4 +1,4 @@
-const API="https://breezeblue-manager.orkestr.run/api";
+const API="/api";
 let token=localStorage.getItem("bb_token");
 
 function toast(msg,cls=""){
