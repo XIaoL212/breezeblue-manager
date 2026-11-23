@@ -272,8 +272,8 @@ def get_admin(request: Request) -> str:
 async def add_account(body: AccountIn, admin: str = Depends(get_admin)):
     try:
         with db() as conn:
-            conn.execute('INSERT INTO accounts (email, password, api_key, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-                         (body.email, body.password, body.api_key, body.note, now_iso(), now_iso()))
+            conn.execute('INSERT INTO accounts (email, password, api_key, note, created_at) VALUES (?, ?, ?, ?, ?)',
+                         (body.email, body.password, body.api_key, body.note, now_iso()))
             row = conn.execute('SELECT * FROM accounts WHERE email=?', (body.email,)).fetchone()
             return dict(row)
     except sqlite3.IntegrityError:
@@ -353,4 +353,32 @@ app.mount('/static', StaticFiles(directory=STATIC_DIR), name='static')
 @app.get('/')
 async def index():
     return FileResponse(os.path.join(STATIC_DIR, 'index.html'))
+
+
+# Add missing columns if they don't exist
+with db() as conn:
+    try:
+        conn.execute('ALTER TABLE accounts ADD COLUMN web_session TEXT DEFAULT ''')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute('ALTER TABLE accounts ADD COLUMN fingerprint_json TEXT DEFAULT ''{}''')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute('ALTER TABLE accounts ADD COLUMN last_checkin_at TEXT DEFAULT ''')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute('ALTER TABLE accounts ADD COLUMN last_sync TEXT')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute('ALTER TABLE accounts ADD COLUMN last_error TEXT DEFAULT ''')
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute('ALTER TABLE accounts ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''')
+    except sqlite3.OperationalError:
+        pass
 
