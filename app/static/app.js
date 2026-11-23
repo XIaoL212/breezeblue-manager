@@ -188,7 +188,7 @@ async function showAddAccountModal(){
     e.preventDefault();
     const form=e.target;
     const data={
-      username:form.username.value.trim(),
+      email:form.username.value.trim(),
       password:form.password.value
     };
     api("/accounts",{method:"POST",body:JSON.stringify(data)})
