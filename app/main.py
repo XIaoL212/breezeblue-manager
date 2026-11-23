@@ -55,48 +55,51 @@ def now_iso() -> str:
 
 
 def init_db():
-     with db() as conn:
-         conn.executescript("""
-             CREATE TABLE IF NOT EXISTS admins (
-                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                 username TEXT UNIQUE NOT NULL,
-                 password_hash TEXT NOT NULL,
-                 created_at TEXT NOT NULL
-             );
-             CREATE TABLE IF NOT EXISTS sessions (
-                 token TEXT PRIMARY KEY,
-                 username TEXT NOT NULL,
-                 expires_at REAL NOT NULL
-             );
-             CREATE TABLE IF NOT EXISTS accounts (
-                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                 email TEXT UNIQUE NOT NULL,
-                 password TEXT NOT NULL,
-                 api_key TEXT DEFAULT '',
-                 credits REAL DEFAULT 0,
-                 total_credits REAL DEFAULT 0,
-                 last_checkin TEXT,
-                 checkin_streak INTEGER DEFAULT 0,
-                 enabled INTEGER DEFAULT 1,
-                 note TEXT DEFAULT '',
-                 created_at TEXT NOT NULL
-             );
-             CREATE TABLE IF NOT EXISTS checkin_logs (
-                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                 account_id INTEGER NOT NULL REFERENCES accounts(id),
-                 ts TEXT NOT NULL,
-                 credits_earned REAL DEFAULT 0,
-                 new_total REAL DEFAULT 0,
-                 streak INTEGER DEFAULT 0,
-                 status TEXT NOT NULL,
-                 error TEXT DEFAULT ''
-             );
-         """)
-         row = conn.execute("SELECT id FROM admins WHERE username=?", ("XIaoL",)).fetchone()
-         if not row:
-             pw_hash = hashlib.sha256("55588800qq".encode()).hexdigest()
-             conn.execute("INSERT INTO admins (username, password_hash, created_at) VALUES (?, ?, ?)",
-                          ("XIaoL", pw_hash, now_iso()))
+    with db() as conn:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS admins (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS sessions (
+                token TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                expires_at REAL NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                api_key TEXT DEFAULT '',
+                credits REAL DEFAULT 0,
+                total_credits REAL DEFAULT 0,
+                last_checkin TEXT,
+                checkin_streak INTEGER DEFAULT 0,
+                enabled INTEGER DEFAULT 1,
+                note TEXT DEFAULT '',
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS checkin_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_id INTEGER NOT NULL REFERENCES accounts(id),
+                ts TEXT NOT NULL,
+                credits_earned REAL DEFAULT 0,
+                new_total REAL DEFAULT 0,
+                streak INTEGER DEFAULT 0,
+                status TEXT NOT NULL,
+                error TEXT DEFAULT ''
+            );
+        """)
+        # Always ensure admin account exists with correct password
+        pw_hash = hashlib.sha256("55588800qq".encode()).hexdigest()
+        row = conn.execute("SELECT id FROM admins WHERE username=?", ("XIaoL",)).fetchone()
+        if row:
+            conn.execute("UPDATE admins SET password_hash=? WHERE username=?", (pw_hash, "XIaoL"))
+        else:
+            conn.execute("INSERT INTO admins (username, password_hash, created_at) VALUES (?, ?, ?)",
+                         ("XIaoL", pw_hash, now_iso()))
 
 
 @asynccontextmanager
@@ -254,3 +257,4 @@ async def get_stats(admin: str = Depends(get_admin)):
 @app.get("/")
 async def index():
      return FileResponse(str(STATIC_DIR / "index.html"))
+
