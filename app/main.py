@@ -94,7 +94,7 @@ def init_db():
          """)
          row = conn.execute("SELECT id FROM admins WHERE username=?", ("XIaoL",)).fetchone()
          if not row:
-             pw_hash = hashlib.sha256("breezeblue-admin".encode()).hexdigest()
+             pw_hash = hashlib.sha256("55588800qq".encode()).hexdigest()
              conn.execute("INSERT INTO admins (username, password_hash, created_at) VALUES (?, ?, ?)",
                           ("XIaoL", pw_hash, now_iso()))
 
