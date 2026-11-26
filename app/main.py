@@ -753,7 +753,7 @@ async def relay_v1(rest: str, request: Request, admin: str = Depends(get_admin))
     }
     if request.headers.get("content-type"):
         upstream_headers["Content-Type"] = request.headers.get("content-type")
-    query = [(k, v) for k, v in request.url.query_params.multi_items() if k != "account_id"]
+    query = [(k, v) for k, v in request.query_params.multi_items() if k != "account_id"]
     client = make_client()
     try:
         req = client.build_request(request.method, API_BASE_URL + request.url.path, headers=upstream_headers, params=query, content=body)
