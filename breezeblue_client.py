@@ -73,7 +73,8 @@ async def request(
     if headers:
         merged_headers.update(headers)
     try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        transport = httpx.AsyncHTTPTransport(local_address="0.0.0.0", retries=3)
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, transport=transport) as client:
             response = await client.request(
                 method.upper(),
                 str(base_url or DEFAULT_BASE_URL).rstrip("/") + path,

@@ -14,7 +14,7 @@
       <span class="logo">B</span>
       <div>
         <h1>BreezeBlue 账户管理</h1>
-        <p>批量登录与自动签到</p>
+        <p>批量登录、自动签到与 API 中转</p>
       </div>
     </div>
     <form id="loginForm">
@@ -35,7 +35,7 @@
   </div>
 </div>
 
-<!-- Dashboard (shown after login) -->
+<!-- Dashboard -->
 <div id="dashboard" class="layout hidden">
   <aside class="sidebar">
     <div class="brand small">
@@ -45,6 +45,7 @@
     <nav id="nav">
       <a data-view="dash" class="active"><i>▤</i>概览</a>
       <a data-view="accounts"><i>♟</i>账户列表</a>
+      <a data-view="relay"><i>⇄</i>API中转</a>
       <a data-view="logs"><i>≡</i>签到日志</a>
     </nav>
     <div class="side-foot">
@@ -61,7 +62,6 @@
       </div>
     </header>
 
-    <!-- Dashboard View -->
     <section id="view-dash" class="view active">
       <div class="cards" id="statCards"></div>
       <div class="panel">
@@ -73,7 +73,6 @@
       </div>
     </section>
 
-    <!-- Accounts View -->
     <section id="view-accounts" class="view">
       <div class="panel">
         <div class="panel-head"><h3>账户列表</h3><button class="btn primary small" id="addAccountBtn2">+ 添加账户</button></div>
@@ -81,7 +80,21 @@
       </div>
     </section>
 
-    <!-- Logs View -->
+    <section id="view-relay" class="view">
+      <div class="panel">
+        <div class="panel-head"><h3>API 中转</h3></div>
+        <div style="display:grid;gap:12px;padding:16px">
+          <label style="display:block"><span>本地中转地址</span><input id="relayBase" value="/v1" readonly></label>
+          <label style="display:block"><span>账户 ID</span><input id="relayAccount" value="1"></label>
+          <label style="display:block"><span>接口路径</span><input id="relayPath" value="/v1/balance"></label>
+          <label style="display:block"><span>方法</span><select id="relayMethod"><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option></select></label>
+          <label style="display:block"><span>JSON Body</span><textarea id="relayBody" rows="5" style="width:100%;min-height:110px">{}</textarea></label>
+          <div class="actions"><button class="btn primary" id="sendRelayBtn">发送中转请求</button></div>
+          <label style="display:block"><span>响应</span><textarea id="relayResponse" rows="10" style="width:100%;min-height:220px"></textarea></label>
+        </div>
+      </div>
+    </section>
+
     <section id="view-logs" class="view">
       <div class="panel">
         <div class="panel-head"><h3>签到日志</h3><button class="btn ghost small" id="refreshLogsBtn">刷新</button></div>
