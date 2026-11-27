@@ -783,7 +783,9 @@ async def get_backup(admin: str = Depends(get_admin)):
         except Exception as exc:
             error = str(exc)[:200]
     return {
-        "backend": "s3" if snapshot.enabled() else "local-only",
+        "database": storage.backend,
+        "database_note": storage.note,
+        "snapshots_to": "对象存储 (S3 兼容)" if snapshot.enabled() else "未配置",
         "config": snapshot.public_config(),
         "snapshots": listed,
         "error": error,

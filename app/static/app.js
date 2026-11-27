@@ -273,7 +273,9 @@ async function loadBackup() {
     const data = await api("/backup");
     const cfg = data.config || {};
     const rows = [
-      ["存储后端", data.backend === "s3" ? "对象存储 (S3 兼容)" : "仅容器本地（重新部署会丢失）"],
+      ["当前数据库", data.database === "postgres" ? "PostgreSQL (官方附加组件)" : "SQLite（容器内，靠快照保护）"],
+      ["选择原因", data.database_note || "-"],
+      ["快照目标", data.snapshots_to || "未配置"],
       ["桶", cfg.bucket || "-"],
       ["目录前缀", cfg.prefix || "-"],
       ["快照目录", cfg.snapshot_prefix || "-"],

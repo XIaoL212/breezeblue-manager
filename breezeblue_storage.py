@@ -1,28 +1,45 @@
 """Storage layer for BreezeBlue Manager.
 
-SQLite stays the default so the app runs anywhere. When the platform injects
-``DATABASE_URL`` (a managed Postgres add-on) the exact same SQL runs against
-Postgres instead, so account data survives redeploys and container restarts.
+SQLite stays the default. The platform injects a ``DATABASE_URL`` pointing at the
+managed Postgres add-on, but that add-on is not always actually running, so the
+backend is chosen by probing rather than by the mere presence of the variable: an
+unreachable Postgres must never stop the app from starting.
 """
 from __future__ import annotations
 
 import os
 import sqlite3
 
-_SQLITE_PATH = ""
 _DATABASE_URL = (os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL") or "").strip()
-_IS_POSTGRES = bool(_DATABASE_URL)
+PREFERRED = os.environ.get("BREEZEBLUE_DB_BACKEND", "").strip().lower()
+backend = "sqlite"
+note = "not initialised"
+_SQLITE_PATH = ""
 
 
 def init(sqlite_path: str) -> None:
-    """Point the SQLite side at ``sqlite_path``; Postgres wins when configured."""
-    global _SQLITE_PATH, _IS_POSTGRES
+    """Choose the backend: explicit override, reachable Postgres, else SQLite."""
+    global _SQLITE_PATH, backend, note
     _SQLITE_PATH = sqlite_path
-    _IS_POSTGRES = bool(_DATABASE_URL)
+    if PREFERRED not in ("", "sqlite", "postgres"):
+        print(f"breezeblue-db-backend-ignored: {PREFERRED}", flush=True)
+    if PREFERRED == "sqlite":
+        backend, note = "sqlite", "forced by BREEZEBLUE_DB_BACKEND"
+    elif not _DATABASE_URL:
+        backend, note = "sqlite", "no DATABASE_URL injected"
+    else:
+        try:
+            import psycopg
+
+            with psycopg.connect(_DATABASE_URL, connect_timeout=5):
+                backend, note = "postgres", "managed Postgres add-on is reachable"
+        except Exception as exc:
+            backend, note = "sqlite", f"Postgres unreachable, fell back to SQLite: {str(exc)[:180]}"
+    print(f"breezeblue-db-backend={backend} ({note})", flush=True)
 
 
 def is_postgres() -> bool:
-    return _IS_POSTGRES
+    return backend == "postgres"
 
 
 class Row(dict):
@@ -83,7 +100,8 @@ class _Conn:
         return self
 
     def __exit__(self, exc_type, exc, tb):
-        # sqlite3.Connection.commit/rollback already ran here before close().
+        # Mirror sqlite3.Connection's own transaction protocol, then release the
+        # handle so a redeploy or a restart cannot leak connections.
         if exc_type is None:
             self._raw.commit()
         else:
@@ -93,7 +111,7 @@ class _Conn:
 
 
 def db():
-    if _IS_POSTGRES:
+    if backend == "postgres":
         import psycopg
         from psycopg.rows import dict_row
 
