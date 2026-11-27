@@ -151,12 +151,22 @@ INTERVAL = float(os.environ.get("BREEZEBLUE_SNAPSHOT_INTERVAL", "10800"))
 
 
 async def snapshot_loop(db_path: str) -> None:
-    interval = INTERVAL
+    """Capture the boot state early, then keep snapshotting on the interval.
+
+    A seeded account and its first check-in land within the first minute, so
+    waiting out the full interval before the first snapshot would leave a window
+    where a redeploy loses everything the container just learned.
+    """
+    await asyncio.sleep(60)
     while True:
-        await asyncio.sleep(interval)
         try:
-            await snapshot(db_path)
+            result = await snapshot(db_path)
+            if result.get("ok"):
+                print(f"breezeblue-snapshot: {result.get('key')} ({result.get('bytes')} bytes)", flush=True)
+            else:
+                print(f"breezeblue-snapshot-failed: {result.get('reason')}", flush=True)
         except asyncio.CancelledError:
-            break
+            raise
         except Exception as exc:
             print(f"breezeblue-snapshot-failed: {exc!r}", flush=True)
+        await asyncio.sleep(INTERVAL)
