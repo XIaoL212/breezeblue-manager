@@ -95,6 +95,7 @@ function switchView(name) {
     accounts: ["账户列表", "账户余额、签到状态、Key 与操作"],
     relay: ["API 中转", "使用账户 Key 通过本平台调用 BreezeBlue"],
     logs: ["签到日志", "最近签到记录"],
+    backup: ["数据备份", "账户与签到数据定期快照到对象存储，重启后自动回灌"],
   };
   document.getElementById("viewTitle").textContent = titles[name]?.[0] || "概览";
   document.getElementById("viewSub").textContent = titles[name]?.[1] || "";
@@ -102,6 +103,7 @@ function switchView(name) {
   if (name === "accounts") loadAccounts();
   if (name === "logs") loadLogs();
   if (name === "relay") loadRelayDefaults();
+  if (name === "backup") loadBackup();
 }
 
 async function loadStats() {
@@ -266,6 +268,50 @@ function closeModal() {
   document.getElementById("modal").classList.add("hidden");
 }
 
+async function loadBackup() {
+  try {
+    const data = await api("/backup");
+    const cfg = data.config || {};
+    const rows = [
+      ["存储后端", data.backend === "s3" ? "对象存储 (S3 兼容)" : "仅容器本地（重新部署会丢失）"],
+      ["桶", cfg.bucket || "-"],
+      ["目录前缀", cfg.prefix || "-"],
+      ["快照目录", cfg.snapshot_prefix || "-"],
+      ["保留份数", String(cfg.retention ?? "-")],
+      ["快照间隔", cfg.interval_seconds ? `${Math.round(cfg.interval_seconds / 3600 * 10) / 10} 小时` : "-"],
+      ["访问密钥", cfg.has_secret ? `${cfg.access_key || ""}（已配置）` : "未配置"],
+    ];
+    document.getElementById("backupMeta").innerHTML = rows
+      .map(([k, v]) => `<div class="kv"><span>${esc(k)}</span><b>${esc(v)}</b></div>`)
+      .join("") + (data.error ? `<p style="color:var(--danger)">读取失败：${esc(data.error)}</p>` : "");
+    const snaps = data.snapshots || [];
+    if (!snaps.length) {
+      document.getElementById("backupTable").innerHTML = "<tr><td colspan='3' style='text-align:center;color:var(--muted);padding:30px'>暂无快照</td></tr>";
+      return;
+    }
+    let html = "<thead><tr><th>快照</th><th>大小</th><th>时间</th></tr></thead><tbody>";
+    for (const s of snaps) {
+      html += `<tr><td>${esc(String(s.key || "").split("/").pop())}</td><td>${(Number(s.size || 0) / 1024).toFixed(1)} KB</td><td>${esc(String(s.last_modified || "").replace("T", " ").replace("Z", " UTC"))}</td></tr>`;
+    }
+    document.getElementById("backupTable").innerHTML = html + "</tbody>";
+  } catch (err) {
+    toast(err.message, "err");
+  }
+}
+
+async function backupNow() {
+  try {
+    toast("正在备份...");
+    const res = await api("/backup/run", { method: "POST", body: "{}" });
+    const r = res.result || {};
+    if (r.ok) toast(`备份完成：${String(r.key || "").split("/").pop()}（${(Number(r.bytes || 0) / 1024).toFixed(1)} KB）`, "ok");
+    else toast(`备份失败：${r.reason || "未知错误"}`, "err");
+    loadBackup();
+  } catch (err) {
+    toast(err.message, "err");
+  }
+}
+
 async function loadLogs() {
   try {
     const logs = await api("/logs");
@@ -343,6 +389,8 @@ document.getElementById("refreshLogsBtn").addEventListener("click", loadLogs);
 document.getElementById("addAccountBtn").addEventListener("click", showAddAccountModal);
 document.getElementById("addAccountBtn2").addEventListener("click", showAddAccountModal);
 document.getElementById("sendRelayBtn").addEventListener("click", sendRelay);
+document.getElementById("backupNowBtn").addEventListener("click", backupNow);
+document.getElementById("backupDashBtn").addEventListener("click", backupNow);
 
 function updateClock() {
   document.getElementById("clock").textContent = new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });

@@ -7,7 +7,6 @@ import json
 import os
 import re
 import secrets
-import sqlite3
 import sys
 import time
 import uuid
@@ -27,6 +26,9 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 import breezeblue_client as breezeblue
+import breezeblue_storage as storage
+import breezeblue_snapshot as snapshot
+import breezeblue_s3 as s3
 
 
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -139,11 +141,8 @@ def make_client() -> httpx.AsyncClient:
     return httpx.AsyncClient(timeout=REQUEST_TIMEOUT, follow_redirects=True, transport=transport)
 
 
-def db():
-    conn = sqlite3.connect(DB_PATH, timeout=20)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    return conn
+storage.init(DB_PATH)
+db = storage.db
 
 
 def get_account_row(account_id: int):
@@ -527,6 +526,41 @@ def init_db() -> None:
             conn.execute("UPDATE admins SET password_hash=? WHERE username=?", (pw_hash, DEFAULT_ADMIN))
         else:
             conn.execute("INSERT INTO admins(username,password_hash,created_at) VALUES(?,?,?)", (DEFAULT_ADMIN, pw_hash, now_iso()))
+    return seed_accounts_from_env()
+
+
+def seed_accounts_from_env() -> list:
+    """Restore accounts from BREEZEBLUE_SEED_ACCOUNTS.
+
+    Container-local SQLite is wiped on every redeploy, so the account list can
+    live in the environment instead: a JSON array of {"email","password","label"}.
+    """
+    raw = os.environ.get("BREEZEBLUE_SEED_ACCOUNTS", "").strip()
+    if not raw:
+        return []
+    try:
+        items = json.loads(raw)
+    except Exception as exc:
+        print(f"breezeblue-seed-invalid-json: {exc}", flush=True)
+        return []
+    if not isinstance(items, list):
+        return []
+    seeded = []
+    with db() as conn:
+        for item in items:
+            item = item if isinstance(item, dict) else {}
+            email = str(item.get("email") or "").strip().lower()
+            password = str(item.get("password") or "")
+            if not email or not password:
+                continue
+            if conn.execute("SELECT id FROM accounts WHERE lower(email)=?", (email,)).fetchone():
+                continue
+            conn.execute(
+                "INSERT INTO accounts(email,password,label,auto_checkin,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                (email, password, str(item.get("label") or "")[:120], 1, now_iso(), now_iso()),
+            )
+            seeded.append(email)
+    return seeded
 
 
 class LoginIn(BaseModel):
@@ -553,16 +587,33 @@ class KeyIn(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
+    restored = await snapshot.restore(DB_PATH)
+    print(f"breezeblue-restore: {restored}", flush=True)
+    seeded = init_db()
+    for email in seeded:
+        row = get_account_by_email(email)
+        if row:
+            asyncio.create_task(process_new_account(int(row["id"])))
     task = asyncio.create_task(auto_checkin_loop())
+    backup_task = asyncio.create_task(snapshot.snapshot_loop(DB_PATH))
     try:
         yield
     finally:
         task.cancel()
+        backup_task.cancel()
         try:
             await task
         except asyncio.CancelledError:
             pass
+        try:
+            await backup_task
+        except asyncio.CancelledError:
+            pass
+        # Flush the newest state so a redeploy never replays lost work.
+        try:
+            print(f"breezeblue-final-snapshot: {await snapshot.snapshot(DB_PATH)}", flush=True)
+        except Exception as exc:
+            print(f"breezeblue-final-snapshot-failed: {exc!r}", flush=True)
 
 
 app = FastAPI(title="BreezeBlue Manager", version="3.0.0", lifespan=lifespan)
@@ -721,6 +772,35 @@ async def get_stats(admin: str = Depends(get_admin)):
     return {"account_count": int(account_count), "total_credits": float(total_credits), "today_checkins": int(today_checkins)}
 
 
+@app.get("/api/backup")
+async def get_backup(admin: str = Depends(get_admin)):
+    """Show where account data actually lives between redeploys."""
+    listed: list = []
+    error = ""
+    if snapshot.enabled():
+        try:
+            listed = await s3_list_snapshots()
+        except Exception as exc:
+            error = str(exc)[:200]
+    return {
+        "backend": "s3" if snapshot.enabled() else "local-only",
+        "config": snapshot.public_config(),
+        "snapshots": listed,
+        "error": error,
+    }
+
+
+@app.post("/api/backup/run")
+async def run_backup_now(admin: str = Depends(get_admin)):
+    result = await snapshot.snapshot(DB_PATH)
+    return {"ok": bool(result.get("ok")), "config": snapshot.public_config(), "result": result}
+
+
+async def s3_list_snapshots() -> list:
+    listed = await s3.s3_list_objects(snapshot.config(), snapshot.SNAPSHOT_PREFIX)
+    return sorted(listed, key=lambda item: item["key"])[-10:][::-1]
+
+
 def resolve_relay_account(request: Request):
     value = request.headers.get("X-BreezeBlue-Account") or request.query_params.get("account_id") or ""
     if value:
@@ -732,6 +812,8 @@ def resolve_relay_account(request: Request):
         rows = conn.execute("SELECT id FROM accounts WHERE enabled=1 ORDER BY id LIMIT 2").fetchall()
     if len(rows) == 1:
         return get_account_row(int(rows[0]["id"]))
+    if not rows:
+        raise HTTPException(404, "还没有已添加的 BreezeBlue 账户")
     raise HTTPException(400, "多个账户时必须指定 account_id")
 
 

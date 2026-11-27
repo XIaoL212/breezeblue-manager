@@ -47,6 +47,7 @@
       <a data-view="accounts"><i>♟</i>账户列表</a>
       <a data-view="relay"><i>⇄</i>API中转</a>
       <a data-view="logs"><i>≡</i>签到日志</a>
+      <a data-view="backup"><i>⛨</i>数据备份</a>
     </nav>
     <div class="side-foot">
       <button class="btn ghost small" id="logoutBtn">退出登录</button>
@@ -69,6 +70,7 @@
         <div class="actions">
           <button class="btn primary" id="checkinAllBtn">全部签到</button>
           <button class="btn ghost" id="addAccountBtn">添加账户</button>
+          <button class="btn ghost" id="backupDashBtn">立即备份</button>
         </div>
       </div>
     </section>
@@ -99,6 +101,14 @@
       <div class="panel">
         <div class="panel-head"><h3>签到日志</h3><button class="btn ghost small" id="refreshLogsBtn">刷新</button></div>
         <div class="table-wrap"><table id="logTable"></table></div>
+      </div>
+    </section>
+
+    <section id="view-backup" class="view">
+      <div class="panel">
+        <div class="panel-head"><h3>数据备份</h3><button class="btn primary small" id="backupNowBtn">立即备份</button></div>
+        <div id="backupMeta" class="kv-list"></div>
+        <div class="table-wrap"><table id="backupTable"></table></div>
       </div>
     </section>
   </main>
