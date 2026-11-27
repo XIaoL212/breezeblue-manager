@@ -30,7 +30,8 @@ def call(method: str, url: str, body=None, headers=None, timeout=120):
     hdrs = {"Accept": "application/json", **(headers or {})}
     if data is not None:
         hdrs.setdefault("Content-Type", "application/json")
-    req = urllib.request.Request(url, data=data, headers=hdrs)
+    # method= is required: urllib infers GET whenever the body is empty.
+    req = urllib.request.Request(url, data=data, headers=hdrs, method=method)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.status, json.load(resp)
@@ -42,38 +43,54 @@ def orkestr(method: str, path: str, body=None, params: str = ""):
     return call(method, f"{API}{path}{params}", body, {"Authorization": f"Bearer {TOKEN}"})
 
 
-def admin_headers() -> dict:
-    status, data = call("POST", f"{APP_URL}/api/login", {"username": ADMIN_USER, "password": ADMIN_PASSWORD})
-    if status != 200:
-        raise SystemExit(f"后台登录失败 HTTP {status}: {data}")
-    return {"Authorization": f"Bearer {data['token']}"}
+def admin_headers(retries: int = 6) -> dict:
+    """Log in to the running app, waiting out a scale-to-wake cold start."""
+    last = ""
+    for attempt in range(retries):
+        status, data = call("POST", f"{APP_URL}/api/login", {"username": ADMIN_USER, "password": ADMIN_PASSWORD})
+        if status == 200:
+            return {"Authorization": f"Bearer {data['token']}"}
+        last = f"HTTP {status}"
+        if status == 404:
+            break
+        print(f"  后台暂不可用（{last}），{attempt + 1}/{retries} 重试 ...", flush=True)
+        time.sleep(5)
+    raise RuntimeError(f"后台登录失败 {last}")
 
 
 def snapshot_live() -> None:
     print("备份当前线上容器 ...")
-    status, data = call("POST", f"{APP_URL}/api/backup/run", {}, admin_headers())
+    try:
+        status, data = call("POST", f"{APP_URL}/api/backup/run", {}, admin_headers())
+    except RuntimeError as exc:
+        print(f"  {exc}，跳过备份继续部署")
+        return
     result = (data or {}).get("result", {}) if isinstance(data, dict) else {}
     if status == 200 and result.get("ok"):
         print(f"  已快照 {result.get('key')}（{int(result.get('bytes', 0) / 1024):.1f} KB，清理 {result.get('pruned')} 份旧快照）")
     else:
-        print(f"  备份未成功（继续部署，启动时仍会从最近快照回灌）：{str(data)[:200]}")
+        print(f"  备份未成功（继续部署，新容器会从最近快照或种子账户回灌）：{str(data)[:160]}")
 
 
-def wait_live(commit: str) -> None:
-    while True:
+def wait_live(deploy_id: str, timeout: int = 420) -> None:
+    """Poll the deployment we created by id; its commit is only filled in later."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
         status, data = orkestr("GET", f"/projects/{PROJECT_ID}/deployments", params="?limit=1")
-        dep = data["deployments"][0] if status == 200 and data.get("deployments") else {}
+        dep = (data.get("deployments") or [{}])[0] if status == 200 and isinstance(data, dict) else {}
+        if dep.get("id") != deploy_id:
+            print("  waiting for the new deployment to appear ...", flush=True)
+            time.sleep(5)
+            continue
         state = dep.get("status", "unknown")
-        short = (dep.get("commit_sha") or "")[:7]
-        print(f"  {state} @ {short}", flush=True)
+        print(f"  {state} @ {(dep.get('commit_sha') or '-')[:7]}", flush=True)
         if state == "live":
-            if commit and short != commit[:7]:
-                raise SystemExit(f"线上是 {short}，不是预期的 {commit[:7]}")
             return
         if state in {"failed", "error"}:
             steps = [f"{s['step_name']}: {str(s.get('log_output'))[:200]}" for s in dep.get("steps", []) if s.get("status") == "failed"]
             raise SystemExit(f"部署失败：{dep.get('error_message')}\n" + "\n".join(steps))
         time.sleep(6)
+    raise SystemExit(f"部署 {deploy_id[:8]} 在 {timeout}s 内没有完成")
 
 
 def main() -> None:
@@ -90,8 +107,8 @@ def main() -> None:
     status, data = orkestr("POST", f"/projects/{PROJECT_ID}/deployments", None, f"?environment_id={ENVIRONMENT_ID}")
     if status not in (200, 201):
         raise SystemExit(f"触发部署失败 HTTP {status}: {data}")
-    print(f"部署已触发 @ {(data.get('commit_sha') or '')[:7]} {(data.get('commit_message') or '').strip()}")
-    wait_live(data.get("commit_sha") or "")
+    print(f"部署已触发 id={str(data.get('id'))[:8]} status={data.get('status')}")
+    wait_live(str(data.get("id") or ""))
     print(f"线上已是新版本：{APP_URL}")
 
 
